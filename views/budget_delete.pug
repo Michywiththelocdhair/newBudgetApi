@@ -1,0 +1,11 @@
+extends layout
+
+block content
+  h1 #{title}: #{budget.name}
+  p Do you really want to delete this Budget?
+
+  form(method='POST' action='')
+    div.form-group
+      input#budgetid.form-control(type='hidden',name='budgetid', required='true', value=budget._id )
+
+    button.btn.btn-primary(type='submit') Delete

@@ -1,0 +1,273 @@
+const Category = require("../models/category");
+const User = require("../models/user");
+const asyncHandler = require("express-async-handler");
+const { body, validationResult } = require("express-validator");
+
+// Display list of all categories.
+exports.category_list = asyncHandler(async (req, res, next) => {
+  const allCategories = await Category.find().populate("user").exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ categories: allCategories });
+  } else {
+    // Respond with HTML
+    res.render("category_list", {
+      title: "All Categories",
+      categories: allCategories,
+    });
+  }
+});
+
+// Display detail page for a specific category.
+exports.category_detail = asyncHandler(async (req, res, next) => {
+  const category = await Category.findById(req.params.id).populate("user").exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ category: category });
+  } else {
+    // Respond with HTML
+    res.render("category_detail", {
+      title: "Category details",
+      category: category,
+    });
+  }
+});
+
+// Display category create form on GET.
+exports.category_create_get = asyncHandler(async (req, res, next) => {
+  const users = await User.find().exec();
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Create Category", users: users });
+  } else {
+    // Respond with HTML
+    res.render("category_form", { title: "Create Category", users: users });
+  }
+});
+
+// Handle category create on POST.
+exports.category_create_post = [
+  // Validate and sanitize fields.
+  body("user", "User must not be empty.")
+    .exists()
+    .escape(),
+  body("name", "Name must not be empty.")
+    .trim()
+    .isLength({ min: 1 })
+    .escape(),
+  body("description")
+    .trim()
+    .escape(),
+  body("budget_amount")
+    .trim()
+    .escape(),
+
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+
+    // Create a category object with escaped and trimmed data.
+    const category = new Category({
+      user: req.body.user,
+      name: req.body.name,
+      description: req.body.description,
+      budgeted_amount: req.body.budgeted_amount,
+    });
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render form again with sanitized values/error messages.
+      const users = await User.find().exec();
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({
+          title: "Create Category",
+          users: users,
+          errors: errors.array(),
+        });
+      } else {
+        // Respond with HTML
+        res.render("category_form", {
+          title: "Create Category",
+          users: users,
+          category: category,
+          errors: errors.array(),
+        });
+      }
+    } else {
+      // Data from form is valid
+      // Check if Category with the same name exists for the selected user.
+      const categoryExists = await Category.findOne({
+        user: req.body.user,
+        name: req.body.name,
+      }).exec();
+
+      if (categoryExists) {
+        const users = await User.find().exec();
+        // Check if the request accepts JSON
+        if (req.accepts("json")) {
+          // Respond with JSON
+          res.json({
+            title: "Create Category",
+            category: category,
+            users: users,
+            errors: [
+              { msg: "Category with the same name already exists for the selected user." },
+            ],
+          });
+        } else {
+          // Respond with HTML
+          res.render("category_form", {
+            title: "Create Category",
+            category: category,
+            users: users,
+            errors: [{ msg: "Category with the same name already exists for the selected user." }],
+          });
+        }
+        return;
+      } else {
+        // No category with the same name exists for the selected user
+        await category.save();
+        // Check if the request accepts JSON
+        if (req.accepts("json")) {
+          // Respond with JSON
+          res.json({ success: true, category: category });
+        } else {
+          // Redirect to category detail page.
+          res.redirect(category.url);
+        }
+      }
+    }
+  }),
+];
+
+// Display category delete form on GET.
+exports.category_delete_get = asyncHandler(async (req, res, next) => {
+  const category = await Category.findById(req.params.id).exec();
+  if (category === null) {
+    // No results.
+    res.redirect("/home/categories");
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Delete Category", category: category });
+  } else {
+    // Respond with HTML
+    res.render("category_delete", {
+      title: "Delete Category",
+      category: category,
+    });
+  }
+});
+
+// Handle category delete on POST.
+exports.category_delete_post = asyncHandler(async (req, res, next) => {
+  await Category.findByIdAndDelete(req.params.id);
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ success: true });
+  } else {
+    // Redirect to category list page.
+    res.redirect("/home/categories");
+  }
+});
+
+// Display category update form on GET.
+exports.category_update_get = asyncHandler(async (req, res, next) => {
+  const [category, users] = await Promise.all([
+    Category.findById(req.params.id).populate("user").exec(),
+    User.find().exec(),
+  ]);
+
+  if (category === null) {
+    // No results.
+    const err = new Error("Category not found");
+    err.status = 404;
+    return next(err);
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Update Category", category: category, users: users });
+  } else {
+    // Respond with HTML
+    res.render("category_form", {
+      title: "Update Category",
+      category: category,
+      users: users,
+    });
+  }
+});
+
+// Handle category update on POST.
+exports.category_update_post = [
+  // Validate and sanitize fields.
+  body("user", "User must not be empty.")
+    .exists()
+    .escape(),
+  body("name", "Name must not be empty.")
+    .trim()
+    .isLength({ min: 1 })
+    .escape(),
+  body("description")
+    .trim()
+    .escape(),
+  body("budget_amount")
+    .trim()
+    .escape(),
+
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+
+    // Create a category object with escaped and trimmed data.
+    const category = new Category({
+      user: req.body.user,
+      name: req.body.name,
+      description: req.body.description,
+      budgeted_amount: req.body.budgeted_amount,
+      _id: req.params.id, // This is required, or a new ID will be assigned!
+    });
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render form again with sanitized values/error messages.
+      const users = await User.find().exec();
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({
+          title: "Update Category",
+          users: users,
+          category: category,
+          errors: errors.array(),
+        });
+      } else {
+        // Respond with HTML
+        res.render("category_form", {
+          title: "Update Category",
+          users: users,
+          category: category,
+          errors: errors.array(),
+        });
+      }
+    } else {
+      // Data from form is valid. Update the record.
+      const updatedCategory = await Category.findByIdAndUpdate(req.params.id, category, {});
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({ success: true, category: updatedCategory });
+      } else {
+        // Redirect to category detail page.
+        res.redirect(updatedCategory.url);
+      }
+    }
+  }),
+];

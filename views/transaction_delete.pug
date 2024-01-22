@@ -1,0 +1,12 @@
+extends layout
+
+block content
+  h1 #{title}: #{transaction.description}
+
+  p Do you really want to delete this Transaction?
+
+  form(method='POST' action='')
+    div.form-group
+      input#transactionid.form-control(type='hidden',name='transactionid', required='true', value=transaction._id )
+
+    button.btn.btn-primary(type='submit') Delete

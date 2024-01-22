@@ -1,0 +1,14 @@
+extends layout
+
+block content
+  h1= title
+
+  ul
+    each card in cards
+      li
+        a(href=card.url) #{card.card_name}
+        |  (#{card.user.username})
+        p Amount: #{card.amount}
+
+    else
+      li There are no cards.

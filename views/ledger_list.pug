@@ -1,0 +1,14 @@
+extends layout
+
+block content
+  h1= title
+
+  ul
+    each ledger in ledgers
+      li
+        p #{ledger.name}
+        a(href=ledger.url) #{ledger.start_date.toLocaleDateString()} - #{ledger.end_date.toLocaleDateString()}
+        |  (#{ledger.user.username})
+
+    else
+      li There are no ledgers.

@@ -1,0 +1,263 @@
+const Ledger = require("../models/ledger");
+const Transaction = require("../models/transaction");
+const Budget = require("../models/budget");
+const User = require("../models/user");
+const asyncHandler = require("express-async-handler");
+const { body, validationResult } = require("express-validator");
+
+// Display list of all ledgers.
+exports.ledger_list = asyncHandler(async (req, res, next) => {
+  const allLedgers = await Ledger.find().populate("user").exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({  ledgers: allLedgers, });
+  } else {
+    // Respond with HTML
+    res.render("ledger_list", {
+      title: "All Ledgers",
+      ledgers: allLedgers,
+    });
+  }
+});
+
+// Display detail page for a specific ledger.
+exports.ledger_detail = asyncHandler(async (req, res, next) => {
+ const ledger = await   Ledger.findById(req.params.id).populate("transactions").exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ ledger: ledger });
+  } else {
+    // Respond with HTML
+    res.render("ledger_detail", {
+      title: "Ledger details",
+      ledger: ledger,
+    });
+  }
+});
+
+// Display ledger create form on GET.
+exports.ledger_create_get = asyncHandler(async (req, res, next) => {
+  const [users, transactions] = await Promise.all([
+    User.find().exec(),
+    Transaction.find().exec(),
+  ]);
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ 
+      transactions: transactions, 
+      users: users
+    });
+  } else {
+    // Respond with HTML
+    res.render("ledger_form", {
+      title: "Create ledger",  
+      transactions: transactions, 
+      users: users
+    });
+  } 
+});
+
+// Handle ledger create on POST.
+exports.ledger_create_post = [
+  body("user")
+    .exists()
+    .escape(),
+  body("name","Name must be atleast 3 characters")
+    .isLength({ min: 3 })
+    .escape(),
+  body("start_date", "Start date must be a valid date")
+    .isISO8601()
+    .escape(),
+  body("end_date", "End date must be a valid date")
+    .isISO8601()
+    .escape(),
+
+  async (req, res, next) => {
+    // Extract the validation errors from a request.
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      const [users, transactions] = await Promise.all([
+        User.find().exec(),
+        Transaction.find().exec(),
+      ]);
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({ 
+          transactions: transactions,
+          users: users,
+          errors: errors.array(),
+        });
+        return;
+      } else {
+        // Respond with HTML
+        res.render("ledger_form", {
+          title: "Create ledger",
+          transactions: transactions,
+          users: users,
+          errors: errors.array(),
+        });
+        return;
+      }
+    }
+
+    // Data from form is valid.
+    // Fetch transactions within the specified date range.
+    const transactions = await Transaction.find({
+      date: { $gte: req.body.start_date, $lte: req.body.end_date },
+    }).exec();
+
+    // Create a ledger object with escaped and trimmed data.
+    const ledger = new Ledger({
+      user: req.body.user,
+      name: req.body.name,
+      transactions: transactions,
+      start_date: req.body.start_date,
+      end_date: req.body.end_date,
+    });
+
+    // Save the ledger.
+    await ledger.save();
+    res.redirect(ledger.url);
+  },
+];
+
+
+
+// Display ledger delete form on GET.
+exports.ledger_delete_get = asyncHandler(async (req, res, next) => {
+  const ledger = await Ledger.findById(req.params.id).exec();
+  if (ledger === null) {
+    // No results.
+    res.redirect("/home/ledgers");
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ ledger: ledger, });
+  } else {
+    // Respond with HTML
+    res.render("ledger_delete", {
+      title: "Delete Ledger",
+      ledger: ledger,
+    });
+  }
+});
+
+// Handle ledger delete on POST.
+exports.ledger_delete_post = asyncHandler(async (req, res, next) => {
+  const ledger = await Ledger.findById(req.params.id).exec();
+
+  await Ledger.findByIdAndDelete(req.params.id);
+  res.redirect("/home/ledgers");
+});
+
+// Display ledger update form on GET.
+exports.ledger_update_get = asyncHandler(async (req, res, next) => {
+  const [ledger, users, transactions] = await Promise.all([
+    Ledger.findById(req.params.id).exec(),
+    User.find().exec(),
+    Transaction.find().exec(),
+  ]);
+
+  if (ledger === null) {
+    // No results.
+    const err = new Error("Ledger not found");
+    err.status = 404;
+    return next(err);
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ 
+      users: users,
+      transactions: transactions,
+    });
+  } else {
+    // Respond with HTML
+    res.render("ledger_form", {
+      title: "Update Ledger", 
+      users: users,
+      transactions: transactions,
+    });
+  }  
+});
+
+// Handle ledger update on POST.
+exports.ledger_update_post = [
+  body("user")
+    .exists()
+    .escape(),
+  body("name","Name must be atleast 3 characters")
+    .isLength({ min: 3 })
+    .escape(),
+  body("start_date", "Start date must be a valid date")
+    .isISO8601()
+    .escape(),
+  body("end_date", "End date must be a valid date")
+    .isISO8601()
+    .escape(),
+
+  asyncHandler(async (req, res, next) => {
+    // Extract the validation errors from a request.
+    const errors = validationResult(req);
+
+    // Fetch transactions within the specified date range.
+    const transactions = await Transaction.find({
+      date: { $gte: req.body.start_date, $lte: req.body.end_date },
+    }).exec();
+
+    const ledger = new Ledger({
+      user: req.body.user,
+      name: req.body.name,
+      transactions: transactions,
+      start_date: req.body.start_date,
+      end_date: req.body.end_date,
+      _id: req.params.id, // This is required, or a new ID will be assigned!
+    });
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      const [users, transactions] = await Promise.all([
+        User.find().exec(),
+        Transaction.find().exec(),
+      ]);
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({
+          transactions: transactions,
+          ledger: ledger,
+          users: users,
+          errors: errors.array(),
+        });
+      } else {
+        // Respond with HTML
+        res.render("ledger_form", {
+          title: "Update ledger",
+          transactions: transactions,
+          ledger: ledger,
+          users: users,
+          errors: errors.array(),
+        });
+      }
+    } else {
+     // Data from form is valid. Update the record.
+     const updatedLedger = await Ledger.findByIdAndUpdate(req.params.id, ledger, {});
+     // Redirect to ledger detail page.
+     res.redirect(updatedLedger.url);
+    }
+  }),
+];

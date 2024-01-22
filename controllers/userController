@@ -1,0 +1,247 @@
+const User = require("../models/user");
+const asyncHandler = require("express-async-handler");
+const { body, validationResult } = require("express-validator");
+const mongoose = require('mongoose');
+const passport = require("passport");
+const LocalStrategy = require('passport-local').Strategy;
+const bcrypt = require('bcrypt');
+
+// Display list of all Users.
+exports.user_list = asyncHandler(async (req, res, next) => {
+  const allUsers = await User.find({}, "username email").sort({ email: 1 }).exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ users: allUsers, });
+  } else {
+    // Respond with HTML
+    res.render("user_list", {
+      title: "All Users",
+      users: allUsers,
+    });
+  }
+});
+
+// Display detail page for a specific User.
+exports.user_detail = asyncHandler(async (req, res, next) => {
+ const user = await User.findById(req.params.id).exec();
+ if(user === null) {
+   // No results.
+   const err = new Error("User not found");
+   err.status = 404;
+   return next(err);
+ }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ user: user, });
+  } else {
+    // Respond with HTML
+    res.render("user_detail", {
+      title: "User details",
+      user: user,
+    });
+  }  
+});
+
+// Display User create form on GET.
+exports.user_create_get = asyncHandler(async (req, res, next) => {
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Create User" });
+  } else {
+    // Respond with HTML
+    res.render("user_form", { title: "Create User" });
+  }
+});
+
+// Handle User create on POST.
+exports.user_create_post = [
+  // Validate and sanitize the name field.
+  body("email", "Enter valid email address")
+    .trim()
+    .isEmail()
+    .escape(),
+  body("password", "Password must be at least 6 characters")
+    .trim()
+    .isLength({ min: 6 })
+    .escape(),
+  body("username", "Username must be at least 3 characters")
+    .trim()
+    .isLength({min: 3})
+    .escape(),
+
+  // Process request after validation and sanitization.
+  asyncHandler(async (req, res, next) => {
+     // Extract the validation errors from a request.
+    const errors = validationResult(req);
+
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
+    //Create a User object with escaped and trimmed data.
+    const user = new User({
+      email: req.body.email,
+      password: hashedPassword, // Save the hashed password
+      username: req.body.username,
+    });
+
+    if(!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({ 
+          user: user,
+          errors: errors.array(), 
+        });
+        return;
+      } else {
+        // Respond with HTML
+        res.render("user_form", {
+          title: "Create User",
+          user: user,
+          errors: errors.array(),
+        });
+        return;
+      }
+      
+    } else {
+      // Data from form is valid.
+      // Check if User with same email already exists.
+      const userExists = await User.findOne({ email: req.body.email }).exec();
+
+      if (userExists) {
+        // User exists, redirect to its detail page.
+        res.redirect(userExists.url);
+      } else {
+        await user.save();
+        // New user saved. Redirect to user detail page.
+        res.redirect(user.url);
+      }
+    }
+  }),
+];
+
+// Display User delete form on GET.
+exports.user_delete_get = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.params.id).exec();
+   
+
+  if(user === null) {
+    // No results.
+    res.redirect("/home/users");
+    return;
+  }
+
+  res.render("user_delete", { 
+    title: "Delete User", 
+    user: user,
+  });
+});
+
+// Handle User delete on POST.
+exports.user_delete_post = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.params.id).exec();
+
+  if (user === null) {
+    // User not found
+    res.redirect("/home/users");
+    return;
+  }
+
+  // Use the Mongoose remove() method to trigger the pre-remove middleware
+  await User.findByIdAndDelete(req.params.id);
+
+  res.redirect("/home/users");
+});
+
+// Display User update form on GET.
+exports.user_update_get = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.params.id).exec();
+
+  if(user === null) {
+    // No results.
+    const err = new Error("User not found");
+    err.status = 404;
+    return next(err);
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ user: user, });
+  } else {
+    // Respond with HTML
+    res.render("user_form", {
+      title: "Update User",
+      user: user,
+    });
+  }
+});
+
+// Handle User update on POST.
+exports.user_update_post = [
+  // Validate and sanitize the name field.
+  body("email", "Enter valid email address")
+    .trim()
+    .isEmail()
+    .escape(),
+  body("password", "Password must be at least 6 characters")
+    .trim()
+    .isLength({ min: 6 })
+    .escape(),
+  body("username", "Username must be at least 3 characters")
+    .trim()
+    .isLength({min: 3})
+    .escape(),
+
+  // Process request after validation and sanitization.
+  asyncHandler(async (req, res, next) => {
+     // Extract the validation errors from a request.
+    const errors = validationResult(req);
+
+    // Hash the password if it's provided in the request
+    let hashedPassword = req.body.password;
+    if (hashedPassword) {
+      hashedPassword = await bcrypt.hash(hashedPassword, 10);
+    }
+
+    //Create a User object with escaped and trimmed data.
+    const user = new User({
+      email: req.body.email,
+      password: hashedPassword, // Save the hashed password
+      username: req.body.username,
+      _id: req.params.id, // This is required, or a new ID will be assigned!
+    });
+
+    if(!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({ 
+          user: user,
+          errors: errors.array(),
+        });
+        return;
+      } else {
+        // Respond with HTML
+        res.render("user_form", {
+          title: "Create User",
+          user: user,
+          errors: errors.array(),
+        });
+        return;
+      }
+    } else {
+      // Data from form is valid. Update the record.
+       const updatedUser = await User.findByIdAndUpdate(req.params.id, user, {});
+       // Redirect to user detail page.
+       res.redirect(updatedUser.url);
+    }
+  }),
+];

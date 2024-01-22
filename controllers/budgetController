@@ -1,0 +1,393 @@
+const Budget = require("../models/budget");
+const Card = require("../models/card");
+const Category = require("../models/category");
+const User = require("../models/user");
+const Transaction = require("../models/transaction");
+const Ledger = require("../models/ledger");
+const asyncHandler = require("express-async-handler");
+const { body, validationResult } = require("express-validator");
+
+// Display list of all budgets.
+exports.budget_list = asyncHandler(async (req, res, next) => {
+ const allBudgets = await Budget.find().populate("user").exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ budgets: allBudgets });
+  } else {
+    // Respond with HTML
+    res.render("budget_list", {
+      title: "All Budgets",
+      budgets: allBudgets,
+    });
+  }
+});
+
+// Display detail page for a specific budget.
+exports.budget_detail = asyncHandler(async (req, res, next) => {
+  const budget = await Budget.findById(req.params.id).populate("user card categories").exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ budget: budget });
+  } else {
+    // Respond with HTML
+    res.render("budget_detail", {
+      title: "Budget details",
+      budget: budget,
+    });
+  }
+});
+
+// Display budget create form on GET.
+exports.budget_create_get = asyncHandler(async (req, res, next) => {
+
+  const [users, cards, categories] = await Promise.all([
+    User.find().exec(),
+    Card.find().exec(),
+    Category.find().exec(),
+  ]);
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({
+      title: "Create Budget",
+      cards: cards,
+      categories: categories,
+      users: users,
+    });
+  } else {
+    // Respond with HTML
+    res.render("budget_form", { 
+      title: "Create Budget",
+      cards: cards,
+      categories: categories,
+      users: users,
+    });
+  }
+});
+
+// Handle budget create on POST.
+exports.budget_create_post = [
+  // Convert the genre to an array.
+  (req, res, next) => {
+    if (!(req.body.category instanceof Array)) {
+      if (typeof req.body.category === "undefined") req.body.category = [];
+      else req.body.category = new Array(req.body.category);
+    }
+    next();
+  },
+
+  body("user")
+    .exists()
+    .escape(),
+  body("name", "Name must be at least 3 characters long")
+    .trim()
+    .isLength({ min: 3 })
+    .escape(),
+  body("start_date", "Start date must be a valid date")
+    .isISO8601()
+    .escape(),
+  body("end_date", "End date must be a valid date")
+    .isISO8601()
+    .escape(),
+  body("amount", "Amount must be a number")
+    .isNumeric()
+    .escape(),
+  body("description", "Description must be at least 3 characters long")
+    .isLength({ min: 3 })
+    .escape(),
+  body("card", "Card must be selected")
+    .exists()
+    .escape(),
+   body("category.*").escape(),
+
+  asyncHandler(async (req, res, next) => {
+    // Extract the validation errors from a request.
+    const errors = validationResult(req);
+
+    // Create a budget object with escaped and trimmed data.
+    const budget = new Budget({
+      user: req.body.user,
+      name: req.body.name,
+      start_date: req.body.start_date,
+      end_date: req.body.end_date,
+      amount: req.body.amount,
+      description: req.body.description,
+      card: req.body.card,
+      categories: req.body.category,
+    });
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      const [users, cards, categories] = await Promise.all([
+        User.find().exec(),
+        Card.find().exec(),
+        Category.find().exec(),
+      ]);
+
+      // Mark our selected categories as checked.
+      for (const category of categories) {
+        if (budget.categories.includes(category._id)) {
+          category.checked = "true";
+        }
+      }
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({
+          title: "Create Budget",
+          cards: cards,
+          categories: categories,
+          users: users,
+          errors: errors.array(),
+        });
+      } else {
+        // Respond with HTML
+        res.render("budget_form", {
+          title: "Create Budget",
+          cards: cards,
+          categories: categories,
+          users: users,
+          errors: errors.array(),
+        });
+      }
+      return;
+    } else {
+      // Data from form is valid.
+      // Check if Budget with the same name exists for the selected user.
+      const budgetExists = await Budget.exists({
+        user: req.body.user,
+        name: req.body.name,
+      });
+
+      if (budgetExists) {
+        const [users, cards, categories] = await Promise.all([
+          User.find().exec(),
+          Card.findById({ user: req.params.id }).exec(),
+          Category.findById({ user: req.params.id }).exec(),
+        ]);
+
+        // Check if the request accepts JSON
+        if (req.accepts("json")) {
+          // Respond with JSON
+          res.json({
+            title: "Create Budget",
+            cards: cards,
+            categories: categories,
+            users: users,
+            errors: [{ msg: "Budget with the same name already exists for the selected user." }],
+          });
+        } else {
+          // Respond with HTML
+          res.render("budget_form", {
+            title: "Create Budget",
+            cards: cards,
+            categories: categories,
+            users: users,
+            errors: [{ msg: "Budget with the same name already exists for the selected user." }],
+          });
+        }
+        return;
+      } else {
+        // No budget with the same name exists for the selected user.
+        await budget.save();
+
+        // Check if the request accepts JSON
+        if (req.accepts("json")) {
+          // Respond with JSON
+          res.json({ success: true, budget: budget });
+        } else {
+          // New budget saved. Redirect to budget detail page.
+          res.redirect(budget.url);
+        }
+      }
+    }
+  }),
+];
+
+// Display budget delete form on GET.
+exports.budget_delete_get = asyncHandler(async (req, res, next) => {
+  const budget = await Budget.findById(req.params.id).exec();
+
+  if (budget === null) {
+    // No results.
+    res.redirect("/home/budgets");
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Delete Budget", budget: budget });
+  } else {
+    // Respond with HTML
+    res.render("budget_delete", { 
+      title: "Delete Budget", 
+      budget: budget 
+    });
+  }
+});
+
+// Handle budget delete on POST.
+exports.budget_delete_post = asyncHandler(async (req, res, next) => {
+
+  await Budget.findOneAndDelete({ _id: req.params.id});
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ success: true });
+  } else {
+    // Redirect to budget list page.
+    res.redirect("/home/budgets");
+  }
+});
+
+// Display budget update form on GET.
+exports.budget_update_get = asyncHandler(async (req, res, next) => {
+  const [budget, users, cards, categories] = await Promise.all([
+    Budget.findById(req.params.id).exec(),
+    User.find().exec(),
+    Card.find().exec(),
+    Category.find().exec(),
+  ]);
+
+  if(budget === null) {
+    // No results.
+    const err = new Error("Budget not found");
+    err.status = 404;
+
+    // Check if the request accepts JSON
+    if (req.accepts("json")) {
+      // Respond with JSON
+      res.json({ title: "Update Budget", users: users });
+    } else {
+      // Respond with HTML
+      res.render("budget_form", { 
+        title: "Update Budget", 
+        users: users, 
+        errors: [{ msg: "Budget not found" }],
+      });
+    }
+    return next(err);
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Update Budget", budget: budget, users: users, cards: cards, categories: categories });
+  } else {
+    // Respond with HTML
+    res.render("budget_form", { 
+      title: "Update Budget", 
+      users: users, 
+      cards: cards, 
+      categories: categories,
+      budget: budget,
+    });
+  }
+});
+
+// Handle budget update on POST.
+exports.budget_update_post = [
+  // Convert the genre to an array.
+  (req, res, next) => {
+    if (!(req.body.category instanceof Array)) {
+      if (typeof req.body.category === "undefined") req.body.category = [];
+      else req.body.category = new Array(req.body.category);
+    }
+    next();
+  },
+  
+  //Validate and sanitize the fields
+  body("user")
+    .exists()
+    .escape(),
+  body("name", "Name must be at least 3 characters long")
+    .trim()
+    .isLength({ min: 3 })
+    .escape(),
+  body("start_date", "Start date must be a valid date")
+    .isISO8601()
+    .escape(),
+  body("end_date", "End date must be a valid date")
+    .isISO8601()
+    .escape(),
+  body("amount", "Amount must be a number")
+    .isNumeric()
+    .escape(),
+  body("description", "Description must be at least 3 characters long")
+    .isLength({ min: 3 })
+    .escape(),
+  body("card", "Card must be selected")
+    .exists()
+    .escape(),
+  body("category.*").escape(),
+
+  asyncHandler(async (req, res, next) => {
+    // Extract the validation errors from a request.
+    const errors = validationResult(req);
+
+    // Create a budget object with escaped and trimmed data.
+    const budget = new Budget({
+      user: req.body.user,
+      name: req.body.name,
+      start_date: req.body.start_date,
+      end_date: req.body.end_date,
+      amount: req.body.amount,
+      description: req.body.description,
+      card: req.body.card,
+      categories: req.body.categories,
+      _id: req.params.id, // This is required, or a new ID will be assigned!
+    });
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      const [users, cards, categories] = await Promise.all([
+        User.find().exec(),
+        Card.find().exec(),
+        Category.find().exec(),
+      ]);
+
+      // Mark our selected categories as checked.
+      for (const category of categories) {
+        if (budget.categories.includes(category._id)) {
+          category.checked = "true";
+        }
+      }
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({ 
+          title: "Update Budget",
+          budget: budget,
+          cards: cards,
+          categories: categories,
+          users: users,
+          errors: errors.array(), });
+        return;
+      } else {
+        // Respond with HTML
+        res.render("budget_form", {
+          title: "Update Budget",
+          budget: budget,
+          cards: cards,
+          categories: categories,
+          users: users,
+          errors: errors.array(),
+        });
+        return;
+      }
+    } else {
+      // Data from form is valid. Update the record.
+      const updatedBudget = await Budget.findByIdAndUpdate(req.params.id, budget, {});
+      // Redirect to book detail page.
+      res.redirect(updatedBudget.url);
+    }
+  }),
+];

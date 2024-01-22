@@ -1,0 +1,22 @@
+extends layout
+
+block content
+  h1 #{title}: #{card.card_name}
+
+  if allTransactionsInCard.length
+    p #[strong Delete the following before attempting to delete this card.]
+
+    div(style='margin-left:20px;margin-top:20px')
+      dl
+        each transaction in allTransactionsInCard
+          dt
+            a(href=transaction.url) #{transaction.description}
+
+  else
+    p Do you really want to delete this card?
+
+    form(method='POST' action='')
+      div.form-group
+        input#cardid.form-control(type='hidden', name='cardid', required='true', value=card._id)
+
+      button.btn.btn-primary(type='submit') Delete

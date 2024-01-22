@@ -1,0 +1,14 @@
+extends layout
+
+block content
+
+  h1= title
+  p Category: #{category.name}
+  p User: #{category.user.username}
+  p Description: #{category.description}
+  hr
+  p
+  a(href=category.url+'/update') Update category
+  p
+    a(href=category.url+'/delete') Delete category
+

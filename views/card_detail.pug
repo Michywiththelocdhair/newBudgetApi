@@ -1,0 +1,15 @@
+extends layout
+
+block content
+
+  h1= title
+  p User: #{card.user.username}
+  h3 Card: #{card.card_name}
+ 
+
+  p Amount: #{card.amount}
+  hr
+  p
+  a(href=card.url+'/update') Update card
+  p
+    a(href=card.url+'/delete') Delete card

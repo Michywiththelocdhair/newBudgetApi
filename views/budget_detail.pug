@@ -1,0 +1,23 @@
+extends layout
+
+block content
+
+  h1 Budget Name: #{budget.name}
+
+  p Amount: #{budget.amount}
+
+  if budget.categories.length
+    h4 Categories
+    each category in budget.categories
+      li #{category.name}
+  else
+    p No categories available.
+
+  p Duration: #{budget.start_date_formatted} - #{budget.end_date_formatted}
+
+  hr
+  p
+  a(href=budget.url+'/update') Update budget
+  p
+    a(href=budget.url+'/delete') Delete budget
+

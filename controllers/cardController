@@ -1,0 +1,321 @@
+const Card = require("../models/card");
+const Transaction = require("../models/transaction");
+const Budget = require("../models/budget");
+const User = require("../models/user");
+const asyncHandler = require("express-async-handler");
+const { body, validationResult } = require("express-validator");
+
+// Display list of all cards.
+exports.card_list = asyncHandler(async (req, res, next) => {
+  const allCards = await Card.find({}, "username card_name amount").populate("user").sort({ username: 1 }).exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ cards: allCards });
+  } else {
+    // Respond with HTML
+    res.render("card_list", {
+      title: "All Cards",
+      cards: allCards,
+    });
+  }
+});
+
+// Display detail page for a specific card.
+exports.card_detail = asyncHandler(async (req, res, next) => {
+  const card = await Card.findById(req.params.id).populate("user").exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ card: card });
+  } else {
+    // Respond with HTML
+    res.render("card_detail", {
+      title: "Card details",
+      card: card,
+    });
+  }
+});
+
+// Display card create form on GET.
+exports.card_create_get = asyncHandler(async (req, res, next) => {
+  const users = await User.find().exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Create Card", users: users });
+  } else {
+    // Respond with HTML
+    res.render('card_form', { 
+      title: 'Create Card', 
+      users: users });
+  }
+});
+
+// Handle card create on POST.
+exports.card_create_post = [
+  // Validate and sanitize the card_name field.
+  body("card_name", "Card name must contain at least 3 characters")
+    .trim()
+    .isLength({ min: 3 })
+    .escape(),
+  // Validate and sanitize the amount field.
+  body("amount", "Amount must be a number")
+    .trim()
+    .isNumeric()
+    .escape(),
+  // Validate and sanitize the user field.
+  body('user', 'User must be selected')
+    .exists()
+    .escape(),
+
+  asyncHandler(async (req, res, next) => {
+    // Extract the validation errors from a request.
+    const errors = validationResult(req);
+
+    // Create a card object with escaped and trimmed data.
+    const card = new Card({ 
+      user: req.body.user,
+      card_name: req.body.card_name,
+      amount: req.body.amount,
+    });
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      const users = await User.find().exec();
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({
+          title: "Create Card",
+          users: users,
+          card: card,
+          errors: errors.array(),
+        });
+      } else {
+        // Respond with HTML
+        res.render("card_form", {
+          title: "Create Card",
+          users: users,
+          card: card,
+          errors: errors.array(),
+        });
+      }
+      return;
+    } else {
+      // Data from form is valid.
+      // Check if Card with the same name exists for the selected user.
+      const cardExists = await Card.findOne({ user: req.body.user, card_name: req.body.card_name }).exec();
+
+      if (cardExists) {
+        // Card exists for the selected user, render the form again with an error message.
+        const users = await User.find().exec();
+
+        // Check if the request accepts JSON
+        if (req.accepts("json")) {
+          // Respond with JSON
+          res.json({
+            title: "Create Card",
+            users: users,
+            card: card,
+            errors: [{ msg: "Card with the same name already exists for the selected user." }],
+          });
+        } else {
+          // Respond with HTML
+          res.render("card_form", {
+            title: "Create Card",
+            users: users,
+            card: card,
+            errors: [{ msg: "Card with the same name already exists for the selected user." }],
+          });
+        }
+        return;
+      } else {
+        // No card with the same name exists for the selected user.
+        await card.save();
+
+        // Check if the request accepts JSON
+        if (req.accepts("json")) {
+          // Respond with JSON
+          res.json({ success: true, card: card });
+        } else {
+          // New card saved. Redirect to card detail page.
+          res.redirect(card.url);
+        }
+      }
+    }
+  }),
+];
+
+// Display card delete form on GET.
+exports.card_delete_get = asyncHandler(async (req, res, next) => {
+  const card = await Card.findById(req.params.id).exec();
+  const allTransactionsInCard = await Transaction.find({ card: req.params.id }).exec();
+
+  if (card === null) {
+    // No results.
+    res.redirect("/home/cards");
+    return;
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Delete Card", card: card, allTransactionsInCard: allTransactionsInCard });
+  } else {
+    // Respond with HTML
+    res.render("card_delete", { 
+      title: "Delete Card", 
+      card: card,
+      allTransactionsInCard: allTransactionsInCard,
+    });
+  }
+});
+
+// Handle card delete on POST.
+exports.card_delete_post = asyncHandler(async (req, res, next) => {
+  const [card, allTransactionsInCard] = await Promise.all([
+    Card.findById(req.params.id).exec(),
+    Transaction.find({ card: req.params.id }).exec(),
+  ]);
+
+  if(allTransactionsInCard.length > 0 ) {
+    // Check if the request accepts JSON
+    if (req.accepts("json")) {
+      // Respond with JSON
+      res.json({ title: "Delete Card", card: card, allTransactionsInCard: allTransactionsInCard });
+    } else {
+      // Respond with HTML
+      res.render("card_delete", { 
+        title: "Delete Card", 
+        card: card,
+        allTransactionsInCard: allTransactionsInCard,
+      });
+    }
+    return;
+  } else {
+    await Card.findByIdAndDelete(req.params.id);
+
+    // Check if the request accepts JSON
+    if (req.accepts("json")) {
+      // Respond with JSON
+      res.json({ success: true });
+    } else {
+      // Redirect to card list page.
+      res.redirect("/home/cards");
+    }
+  }
+});
+
+// Display card update form on GET.
+exports.card_update_get = asyncHandler(async (req, res, next) => {
+  const [card, users]= await Promise.all([
+    Card.findById(req.params.id).exec(),
+    User.find().exec(),
+  ]);
+
+  if (card === null) {
+    // No results.
+    const err = new Error("Card not found");
+    err.status = 404;
+
+    // Check if the request accepts JSON
+    if (req.accepts("json")) {
+      // Respond with JSON
+      res.json({ title: "Update Card", users: users });
+    } else {
+      // Respond with HTML
+      res.render('card_form', { 
+        title: 'Update Card', 
+        users: users, 
+        errors: [{ msg: "Card not found" }],
+      });
+    }
+    return next(err);
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ title: "Update Card", card: card, users: users });
+  } else {
+    // Respond with HTML
+    res.render('card_form', { 
+      title: 'Update Card', 
+      users: users, 
+      card: card,
+    });
+  }
+});
+
+// Handle card update on POST.
+exports.card_update_post = [
+  // Validate and sanitize the card_name field.
+  body("card_name", "Card name must contain at least 3 characters")
+    .trim()
+    .isLength({ min: 3 })
+    .escape(),
+  // Validate and sanitize the amount field.
+  body("amount", "Amount must be a number")
+    .trim()
+    .isNumeric()
+    .escape(),
+  // Validate and sanitize the user field.
+  body('user', 'User must be selected')
+    .exists()
+    .escape(),
+
+  asyncHandler(async (req, res, next) => {
+    // Extract the validation errors from a request.
+    const errors = validationResult(req);
+
+    // Create a card object with escaped and trimmed data.
+    const card = new Card({ 
+      user: req.body.user,
+      card_name: req.body.card_name,
+      amount: req.body.amount,
+      _id: req.params.id, // This is required, or a new ID will be assigned!
+    });
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      const users = await User.find().exec();
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({
+          title: "Update Card",
+          users: users,
+          card: card,
+          errors: errors.array(),
+        });
+      } else {
+        // Respond with HTML
+        res.render("card_form", {
+          title: "Update Card",
+          users: users,
+          card: card,
+          errors: errors.array(),
+        });
+      }
+      return;
+    } else {
+      // Data from form is valid. Update the record.
+      const updatedCard = await Card.findByIdAndUpdate(req.params.id, card, {});
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({ success: true, card: updatedCard });
+      } else {
+        // Redirect to card detail page.
+        res.redirect(updatedCard.url);
+      }
+    }
+  }),
+];

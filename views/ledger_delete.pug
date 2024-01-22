@@ -1,0 +1,12 @@
+extends layout
+
+block content
+  h1 #{title}: #{ledger.name}
+
+  p Do you really want to delete this Ledger?
+
+  form(method='POST' action='')
+    div.form-group
+      input#ledgerid.form-control(type='hidden',name='ledgerid', required='true', value=ledger._id )
+
+    button.btn.btn-primary(type='submit') Delete

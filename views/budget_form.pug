@@ -1,0 +1,49 @@
+extends layout
+
+block content
+  h1= title
+
+  form(method='POST' action='')
+    div.form-group
+      label(for='user') User:
+      select#user.form-control(type='select', placeholder='Select user' name='user' required='true' )
+        - users.sort(function(a, b) {let textA = a.username.toUpperCase(); let textB = b.username.toUpperCase(); return (textA < textB) ? -1 : (textA > textB) ? 1 : 0;});
+        for user in users
+          option(value=user._id, selected=(card && card.user && user._id.toString() === card.user.toString()) ? 'selected' : false) #{user.username}
+
+      label(for='name') Name:
+      input#name.form-control(type='text', name='name' value=(undefined===budget ? '' : budget.name))
+
+      label(for='start_date') Start Date:
+      input#start_date.form-control(type='date', name='start_date' value=(undefined===budget ? '' : budget.start_date))
+
+      label(for='end_date') End Date:
+      input#end_date.form-control(type='date', name='end_date' value=(undefined===budget ? '' : budget.end_date))
+
+      label(for='amount') Amount:
+      input#amount.form-control(type='number', name='amount' value=(undefined===budget ? '' : budget.amount))
+
+      label(for='description') Description:
+      input#description.form-control(type='text', name='description' value=(undefined===budget ? '' : budget.description))
+
+      label(for='card') Card:
+      select#card.form-control(type='select', placeholder='Select card' name='card' required='true' )
+        - cards.sort(function(a, b) {let textA = a.card_name.toUpperCase(); let textB = b.card_name.toUpperCase(); return (textA < textB) ? -1 : (textA > textB) ? 1 : 0;});
+        for card in cards
+          option(value=card._id, selected=(budget && budget.card && card._id.toString() === budget.card.toString()) ? 'selected' : false) #{card.card_name}
+
+      label Category:
+      div
+        for category in categories
+          div(style='display: inline; padding-right:10px;')
+            input.checkbox-input(type='checkbox', name='category', id=category._id, value=category._id, checked=category.checked )
+            label(for=category._id) #{category.name}
+
+
+
+    button.btn.btn-primary(type='submit') Submit
+
+    if errors
+      ul
+        for error in errors
+          li!= error.msg

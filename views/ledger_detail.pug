@@ -1,0 +1,21 @@
+extends layout
+
+block content
+
+  h1= title
+  p Ledger name: #{ledger.name}
+
+  if ledger.transactions && ledger.transactions.length > 0
+    ul
+      each transaction in ledger.transactions
+        li
+          a(href=transaction.url) #{transaction.description}
+          |  (#{transaction.amount})
+  else
+    p No transactions found.
+
+  hr
+  p
+    a(href=ledger.url+'/update') Update ledger
+  p
+    a(href=ledger.url+'/delete') Delete ledger

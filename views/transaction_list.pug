@@ -1,0 +1,13 @@
+extends layout
+
+block content
+  h1= title
+
+  ul
+    each transaction in transactions
+      li
+        a(href=transaction.url) #{transaction.description}
+        |  (#{transaction.user.username})
+
+    else
+      li There are no transactions.

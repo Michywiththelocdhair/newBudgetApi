@@ -1,0 +1,409 @@
+const Transaction = require("../models/transaction");
+const Budget = require("../models/budget");
+const Card = require("../models/card");
+const Category = require("../models/category");
+const Ledger = require("../models/ledger");
+const User = require("../models/user");
+const asyncHandler = require("express-async-handler");
+const { body, validationResult } = require("express-validator");
+
+exports.index = asyncHandler(async (req, res, next) => {
+  const [
+    numBudgets,
+    numCards,
+    numCategories,
+    numLedgers,
+    numTransactions,
+    numUsers,
+  ] = await Promise.all([
+    Budget.countDocuments({}).exec(),
+    Card.countDocuments({}).exec(),
+    Category.countDocuments({}).exec(),
+    Ledger.countDocuments({}).exec(),
+    Transaction.countDocuments({}).exec(),
+    User.countDocuments({}).exec(),
+  ]);
+
+  res.render("index", {
+    title: "Budget Tracker Home",
+    budget_count: numBudgets,
+    card_count: numCards,
+    category_count: numCategories,
+    ledger_count: numLedgers,
+    transaction_count: numTransactions,
+    user_count: numUsers,
+  });
+
+});
+
+// Display list of all transactions.
+exports.transaction_list = asyncHandler(async (req, res, next) => {
+  const allTransactions = await Transaction.find().populate("user category").sort({ date: -1 }).exec();
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ transactions: allTransactions });
+  } else {
+    // Respond with HTML
+    res.render("transaction_list", {
+      title: "All Transactions",
+      transactions: allTransactions,
+    });
+  }
+});
+
+// Display detail page for a specific transaction.
+exports.transaction_detail = asyncHandler(async (req, res, next) => {
+  const [transaction, budget, card, category] = await Promise.all([
+    Transaction.findById(req.params.id).populate("user").exec(),
+    Budget.find({transaction: req.params.id}).exec(),
+    Card.find({transaction: req.params.id}).exec(),
+    Category.find({transaction: req.params.id}).exec(),
+  ]);
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ 
+      transaction: transaction,
+      budget: budget,
+      card: card,
+      category: category,
+    });
+  } else {
+    // Respond with HTML
+    res.render("transaction_detail", {
+      title: "Transaction Detail",
+      transaction: transaction,
+      budget: budget,
+      card: card,
+      category: category,
+    });
+  }
+});
+
+// Display transaction create form on GET.
+exports.transaction_create_get = asyncHandler(async (req, res, next) => {
+  const [allUsers, allBudgets, allCategories, allCards, allLedgers] = await Promise.all([
+    User.find().exec(),
+    Budget.find().exec(),
+    Category.find().exec(),
+    Card.find().exec(),
+    Ledger.find().exec(),
+  ]);
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ 
+      users: allUsers,
+      budgets: allBudgets,
+      categories: allCategories,
+      cards: allCards,
+      ledgers: allLedgers,
+    });
+  } else {
+    // Respond with HTML
+    res.render("transaction_form", {
+      title: "Create Transaction",
+      users: allUsers,
+      budgets: allBudgets,
+      categories: allCategories,
+      cards: allCards,
+      ledgers: allLedgers,
+    });
+  }
+});
+
+// Handle transaction create on POST.
+exports.transaction_create_post = [
+  body("user").exists().escape(),
+  body("budget").optional().escape(),
+  body("category").optional().escape(),
+  body("card").exists().escape(),
+  body("amount", "Amount must be a number").isNumeric().escape(),
+  body("description", "Description must be a string").isString().escape(),
+  body("transaction_type").exists().escape(),
+  body("date").exists().escape(),
+
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      const [allUsers, allBudgets, allCategories, allCards, allLedgers] = await Promise.all([
+        User.find().exec(),
+        Budget.find().exec(),
+        Category.find().exec(),
+        Card.find().exec(),
+        Ledger.find().exec(),
+      ]);
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({
+          users: allUsers,
+          budgets: allBudgets,
+          categories: allCategories,
+          cards: allCards,
+          ledgers: allLedgers,
+          errors: errors.array(),
+        });
+        return;
+      } else {
+        // Respond with HTML
+        return res.render("transaction_form", {
+          title: "Create Transaction",
+          users: allUsers,
+          budgets: allBudgets,
+          categories: allCategories,
+          cards: allCards,
+          ledgers: allLedgers,
+          errors: errors.array(),
+        });
+      }
+    }
+
+    // Data from form is valid.
+    const transaction = new Transaction({
+      user: req.body.user,
+      budget: req.body.budget || null,
+      card: req.body.card,
+      category: req.body.category || null,
+      amount: req.body.amount,
+      description: req.body.description,
+      transaction_type: req.body.transaction_type,
+      date: req.body.date,
+    });
+
+    try {
+      // Save the transaction
+      await transaction.save();
+
+      // Update the corresponding card
+      if (req.body.transaction_type === 'expense') {
+        await updateCard(req.body.card, req.body.amount);
+      } else if (req.body.transaction_type === 'income') {
+        await updateCard(req.body.card, -req.body.amount);
+      }
+
+      // Redirect to transaction detail page.
+      res.redirect(transaction.url);
+    } catch (error) {
+      // Handle errors...
+      next(error);
+    }
+  }),
+];
+
+// Display transaction delete form on GET.
+exports.transaction_delete_get = asyncHandler(async (req, res, next) => {
+  const transaction = await Transaction.findById(req.params.id).exec();
+  if (transaction === null) {
+    // No results.
+    res.redirect("/home/transactions");
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ transaction: transaction, });
+  } else {
+    // Respond with HTML
+    res.render("transaction_delete", {
+      title: "Delete Transaction",
+      transaction: transaction,
+    });
+  }
+ 
+});
+
+// Handle transaction delete on POST.
+exports.transaction_delete_post = asyncHandler(async (req, res, next) => {
+  const transaction = await Transaction.findById(req.params.id).exec();
+
+  if (!transaction) {
+    // Transaction not found, redirect appropriately.
+    res.redirect("/home/transactions");
+    return;
+  }
+
+  try {
+    // Update the corresponding card and budget to revert the changes made by the deleted transaction
+    if (transaction.transaction_type === 'expense') {
+      await updateCard(transaction.card, -transaction.amount);
+    } else if (transaction.transaction_type === 'income') {
+      await updateCard(transaction.card, transaction.amount);
+    }
+
+    // Delete the transaction
+    await Transaction.findByIdAndDelete(req.params.id);
+
+    // Redirect to the transactions list page.
+    res.redirect("/home/transactions");
+  } catch (error) {
+    // Handle errors...
+    next(error);
+  }
+});
+
+// Display transaction update form on GET.
+exports.transaction_update_get = asyncHandler(async (req, res, next) => {
+  const [allUsers, allBudgets, allCategories, allCards, allLedgers, transaction] = await Promise.all([
+    User.find().exec(),
+    Budget.find().exec(),
+    Category.find().exec(),
+    Card.find().exec(),
+    Ledger.find().exec(),
+    Transaction.findById(req.params.id).exec(),
+  ]);
+
+  if (transaction === null) {
+    // No results.
+    const err = new Error("Transaction not found");
+    err.status = 404;
+    return next(err);
+  }
+
+  // Check if the request accepts JSON
+  if (req.accepts("json")) {
+    // Respond with JSON
+    res.json({ 
+      users: allUsers,
+      budgets: allBudgets,
+      categories: allCategories,
+      cards: allCards,
+      ledgers: allLedgers,
+      transaction: transaction,
+    });
+  } else {
+    // Respond with HTML
+    res.render("transaction_form", {
+      title: "Update Transaction",
+      users: allUsers,
+      budgets: allBudgets,
+      categories: allCategories,
+      cards: allCards,
+      ledgers: allLedgers,
+      transaction: transaction,
+    });
+  } 
+});
+
+// Handle transaction update on POST.
+exports.transaction_update_post = [
+  body("user").exists().escape(),
+  body("budget").optional().escape(),
+  body("category").optional().escape(),
+  body("card").exists().escape(),
+  body("amount", "Amount must be a number").isNumeric().escape(),
+  body("description", "Description must be a string").isString().escape(),
+  body("transaction_type").exists().escape(),
+  body("date").exists().escape(),
+
+  asyncHandler(async (req, res, next) => {
+    const errors = validationResult(req);
+
+    const [allUsers, allBudgets, allCategories, allCards, allLedgers] = await Promise.all([
+      User.find().exec(),
+      Budget.find().exec(),
+      Category.find().exec(),
+      Card.find().exec(),
+      Ledger.find().exec(),
+    ]);
+
+    // Data from form is valid.
+    const transaction = new Transaction({
+      user: req.body.user,
+      budget: req.body.budget,
+      card: req.body.card,
+      category: req.body.category,
+      amount: req.body.amount,
+      description: req.body.description,
+      transaction_type: req.body.transaction_type,
+      date: req.body.date,
+      _id: req.params.id, // This is required, or a new ID will be assigned!
+    });
+
+    if (!errors.isEmpty()) {
+      // There are errors. Render the form again with sanitized values/error messages.
+      const [allUsers, allBudgets, allCategories, allCards, allLedgers] = await Promise.all([
+        User.find().exec(),
+        Budget.find().exec(),
+        Category.find().exec(),
+        Card.find().exec(),
+        Ledger.find().exec(),
+      ]);
+
+      // Check if the request accepts JSON
+      if (req.accepts("json")) {
+        // Respond with JSON
+        res.json({ 
+          users: allUsers,
+          budgets: allBudgets,
+          categories: allCategories,
+          cards: allCards,
+          ledgers: allLedgers,
+          transaction: req.body,
+          errors: errors.array(),
+        });
+        return;
+      } else {
+        // Respond with HTML
+        return res.render("transaction_form", {
+          title: "Update Transaction",
+          users: allUsers,
+          budgets: allBudgets,
+          categories: allCategories,
+          cards: allCards,
+          ledgers: allLedgers,
+          transaction: req.body,
+          errors: errors.array(),
+        });
+      }
+    }
+
+    try {
+
+      const originalTransaction = await Transaction.findById(req.params.id).exec();
+      
+      // Update the transaction
+      await Transaction.findByIdAndUpdate(req.params.id, transaction, {});
+
+      // Update the corresponding card and budget based on changes in transaction type and amount
+      
+
+      if (originalTransaction.transaction_type !== transaction.transaction_type ||
+        originalTransaction.amount !== transaction.amount) {
+       // Transaction type or amount has changed, update card and budget
+        await updateCard(originalTransaction.card, -originalTransaction.amount);
+        await updateCard(transaction.card, transaction.amount);
+      }
+
+      // Redirect to transaction detail page.
+      res.redirect(transaction.url);
+    } catch (error) {
+      // Handle errors...
+      next(error);
+    }
+  }),
+];
+
+async function updateCard(cardId, transactionAmount) {
+  try {
+    // Update the card by deducting the transaction amount
+    const card = await Card.findById(cardId);
+    card.amount -= parseFloat(transactionAmount);
+    await card.save();
+
+    // Update the budget by deducting the transaction amount
+    //const budget = await Budget.findById(budgetId);
+   // budget.amount -= parseFloat(transactionAmount);
+   // await budget.save();
+  } catch (error) {
+    // Handle errors...
+    throw error;
+  }
+}

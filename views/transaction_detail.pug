@@ -1,0 +1,18 @@
+extends layout
+
+block content 
+
+
+  h1= title
+
+  p Description: #{transaction.description}
+  p Amount: #{transaction.amount}
+  p Transaction type: #{transaction.transaction_type}
+  p Date: #{transaction.date_formatted}
+  p User: #{transaction.user.username}
+
+  hr
+  p
+    a(href=transaction.url+'/update') Update transaction
+  p
+    a(href=transaction.url+'/delete') Delete transaction
